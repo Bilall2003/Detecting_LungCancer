@@ -5,7 +5,7 @@ def func():
 
     img = cv.imread("asset/LungCancerCTscan.jpg", cv.IMREAD_GRAYSCALE)
     
-    fig1, ax = plt.subplots(1, 2, figsize=(40, 15))
+    fig,ax = plt.subplots(1, 2, figsize=(40, 15))
 
     ax[0].imshow(img, cmap="gray")
     ax[0].axis("off")
@@ -15,4 +15,4 @@ def func():
     ax[1].set_title("Histogram")
 
 
-    return fig1
+    return fig,img
