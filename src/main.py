@@ -5,9 +5,12 @@ import matplotlib.pyplot as plt
 def func(image):
 
     # =========================
-    # 1. Load image
+    # 1. Load image (SAFE)
     # =========================
     img = cv.imread(image, cv.IMREAD_GRAYSCALE)
+
+    if img is None:
+        raise FileNotFoundError(f"Image not found at: {image}")
 
     # =========================
     # 2. Median Blur (denoise)
@@ -17,13 +20,15 @@ def func(image):
     # =========================
     # 3. CLAHE (contrast enhancement)
     # =========================
-    clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     enhanced = clahe.apply(smooth_img)
 
     # =========================
     # 4. Otsu Thresholding (Segmentation)
     # =========================
-    _, mask = cv.threshold(enhanced, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU)
+    _, mask = cv.threshold(
+        enhanced, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU
+    )
 
     # =========================
     # 5. Morphological Cleaning
@@ -37,7 +42,12 @@ def func(image):
     # =========================
     area = cv.countNonZero(cleaned)
 
-    contours, _ = cv.findContours(cleaned, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv.findContours(
+        cleaned, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE
+    )
+
+    perimeter = 0
+    eccentricity = 0
 
     if contours:
         cnt = max(contours, key=cv.contourArea)
@@ -45,13 +55,14 @@ def func(image):
         perimeter = cv.arcLength(cnt, True)
 
         if len(cnt) >= 5:
-            (x, y), (MA, ma), angle = cv.fitEllipse(cnt)
-            eccentricity = np.sqrt(1 - (MA / ma) ** 2) if ma != 0 else 0
-        else:
-            eccentricity = 0
-    else:
-        perimeter = 0
-        eccentricity = 0
+            try:
+                (x, y), (MA, ma), angle = cv.fitEllipse(cnt)
+
+                if ma != 0:
+                    eccentricity = np.sqrt(1 - (MA / ma) ** 2)
+
+            except:
+                eccentricity = 0
 
     # =========================
     # 7. Visualization
@@ -78,12 +89,12 @@ def func(image):
     ax[1, 1].set_title("Morphology Cleaned")
     ax[1, 1].axis("off")
 
-    ax[1, 2].hist(img.ravel(), bins=256)
+    ax[1, 2].hist(img.ravel(), bins=256, range=(0, 256))
     ax[1, 2].set_title("Histogram")
 
     plt.tight_layout()
 
     # =========================
-    # 8. Return everything
+    # 8. Return results
     # =========================
     return fig, img, smooth_img, enhanced, cleaned, area, perimeter, eccentricity
