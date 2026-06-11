@@ -13,6 +13,8 @@ def func():
 
     ax[1].hist(img.ravel(), bins=256)
     ax[1].set_title("Histogram")
+    
+    smooth_img = cv.medianBlur(img,80)
 
 
-    return fig,img
+    return fig,img,smooth_img
