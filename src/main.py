@@ -1,100 +1,86 @@
-import cv2 as cv
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
+import cv2
+from skimage.filters import threshold_otsu
+from skimage.morphology import rectangle, opening, erosion, dilation
+from skimage.measure import regionprops, label
+from sklearn.svm import SVC
+from skimage import exposure 
 
-def func(image):
+img = cv2.imread('lungimg.png', cv2.IMREAD_GRAYSCALE)
+plt.imshow(img, cmap='gray')
+plt.title('Original Lung CT Image')
 
-    # =========================
-    # 1. Load image (SAFE)
-    # =========================
-    img = cv.imread(image, cv.IMREAD_GRAYSCALE)
+print(img.shape)
+print(img.dtype)
 
-    if img is None:
-        raise FileNotFoundError(f"Image not found at: {image}")
+plt.hist(img.ravel(), bins=256, range=(0, 256), color ='gray')
+plt.title('Histogram of original image')
 
-    # =========================
-    # 2. Median Blur (denoise)
-    # =========================
-    smooth_img = cv.medianBlur(img, 3)
 
-    # =========================
-    # 3. CLAHE (contrast enhancement)
-    # =========================
-    clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    enhanced = clahe.apply(smooth_img)
+smooth_img = cv2.medianBlur(img, 3, cv2.IMREAD_GRAYSCALE)
+plt.imshow(smooth_img, cmap='gray')
 
-    # =========================
-    # 4. Otsu Thresholding (Segmentation)
-    # =========================
-    _, mask = cv.threshold(
-        enhanced, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU
-    )
+exp = exposure.adjust_gamma(smooth_img, gamma=2)
+plt.imshow(exp, cmap='gray')
 
-    # =========================
-    # 5. Morphological Cleaning
-    # =========================
-    kernel = cv.getStructuringElement(cv.MORPH_RECT, (5, 5))
-    cleaned = cv.morphologyEx(mask, cv.MORPH_OPEN, kernel)
-    cleaned = cv.dilate(cleaned, kernel, iterations=1)
+plt.hist(exp.ravel(), bins=256, range=(0, 256), color ='gray')
+plt.title('Histogram of exposure image')
 
-    # =========================
-    # 6. Feature Extraction
-    # =========================
-    area = cv.countNonZero(cleaned)
 
-    contours, _ = cv.findContours(
-        cleaned, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE
-    )
+# %%
+thresh = threshold_otsu(exp)
+binary = exp > thresh
 
-    perimeter = 0
-    eccentricity = 0
+plt.imshow(binary, cmap='gray')
 
-    if contours:
-        cnt = max(contours, key=cv.contourArea)
+se = rectangle(40, 30)
 
-        perimeter = cv.arcLength(cnt, True)
+opened = opening(binary, se)
+plt.imshow(opened, cmap='gray')
+plt.title('After Opening (Lung Mask)')
 
-        if len(cnt) >= 5:
-            try:
-                (x, y), (MA, ma), angle = cv.fitEllipse(cnt)
+eroded = erosion(binary, se)
+plt.imshow(eroded, cmap='gray')
+plt.title('After Erosion')
 
-                if ma != 0:
-                    eccentricity = np.sqrt(1 - (MA / ma) ** 2)
+dilated = dilation(eroded, se)
+plt.imshow(dilated, cmap='gray')
+plt.title('After Dilation (Extracted Tumor Region)')
 
-            except:
-                eccentricity = 0
+# Label connected regions in the binary image
+labeled = label(dilated)
+props = regionprops(labeled)
 
-    # =========================
-    # 7. Visualization
-    # =========================
-    fig, ax = plt.subplots(2, 3, figsize=(18, 10))
+# Extract features from the largest region (tumor)
+if props:
+    region = max(props, key=lambda r: r.area)
+    area = region.area
+    perimeter = region.perimeter
+    eccentricity = region.eccentricity
 
-    ax[0, 0].imshow(img, cmap="gray")
-    ax[0, 0].set_title("Original")
-    ax[0, 0].axis("off")
+    print(f"Area:        {area}")
+    print(f"Perimeter:   {perimeter:.4f}")
+    print(f"Eccentricity:{eccentricity:.4f}")
 
-    ax[0, 1].imshow(smooth_img, cmap="gray")
-    ax[0, 1].set_title("Median Blur")
-    ax[0, 1].axis("off")
+    # SVM Classification (using sample data as in assignment)
+    # Training data: [area, eccentricity, perimeter] → label (0=normal, 1=cancerous)
+    X_train = np.array([
+        [1793, 0.7319, 161.698],   # cancerous sample from assignment
+        [500,  0.3,    80.0],      # normal sample (example)
+    ])
+    y_train = np.array([1, 0])  # 1=cancerous, 0=normal
 
-    ax[0, 2].imshow(enhanced, cmap="gray")
-    ax[0, 2].set_title("CLAHE Enhanced")
-    ax[0, 2].axis("off")
+    clf = SVC(kernel='linear')
+    clf.fit(X_train, y_train)
 
-    ax[1, 0].imshow(mask, cmap="gray")
-    ax[1, 0].set_title("Otsu Mask")
-    ax[1, 0].axis("off")
+    sample = np.array([[area, eccentricity, perimeter]])
+    prediction = clf.predict(sample)
+    result = "Cancerous (Abnormal)" if prediction[0] == 1 else "Normal"
+    print(f"\nSVM Classification Result: {result}")
+else:
+    print("No regions detected.")
 
-    ax[1, 1].imshow(cleaned, cmap="gray")
-    ax[1, 1].set_title("Morphology Cleaned")
-    ax[1, 1].axis("off")
 
-    ax[1, 2].hist(img.ravel(), bins=256, range=(0, 256))
-    ax[1, 2].set_title("Histogram")
-
-    plt.tight_layout()
-
-    # =========================
-    # 8. Return results
-    # =========================
-    return fig, img, smooth_img, enhanced, cleaned, area, perimeter, eccentricity
